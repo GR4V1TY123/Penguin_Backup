@@ -1,5 +1,6 @@
 import { program } from "commander";
 import colors from 'colors';
+import { backup_cmd } from "../commands/backup.js";
 
 colors.setTheme({
   silly: 'rainbow',
@@ -29,10 +30,11 @@ program.command("backup")
     .option("-P, --port <port>", "Port of the database")
     .action((options) => {
         if(!options.database || !options.username || !options.password) {
-            console.error("Error: Database name, username, and password are required.".error);
+            console.error("CLI error: Database name, username, and password are required.".error);
             process.exit(1);
         }
         console.log(`Creating a backup of the ${options.database} ${options.username} database...`.success);
+        backup_cmd(options.username, options.password, options.host || 'localhost', options.port || 5432, options.database);
     });
 
 program.command("restore")
@@ -45,7 +47,7 @@ program.command("restore")
     .option("-P, --port <port>", "Port of the database")
     .action((options) => {
         if(!options.database || !options.username || !options.password) {
-            console.error("Error: Database name, username, and password are required.".red);
+            console.error("CLI error: Database name, username, and password are required.".error);
             process.exit(1);
         }
         console.log(`Restoring the ${options.database} ${options.username} database...`.success);
