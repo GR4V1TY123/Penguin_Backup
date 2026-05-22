@@ -1,18 +1,21 @@
 import { program } from "commander";
 import colors from 'colors';
-import { backup_cmd } from "../commands/backup.js";
+import inquirer from 'inquirer';
+import ora from 'ora';
+import { backup_cmd } from "../postgres/backup.js";
+import { validate_connection } from "../postgres/validate.js";
 
 colors.setTheme({
-  silly: 'rainbow',
-  input: 'grey',
-  verbose: 'cyan',
-  prompt: 'grey',
-  success: 'green',
-  data: 'grey',
-  help: 'cyan',
-  warn: 'yellow',
-  info: 'blue',
-  error: 'red'
+    silly: 'rainbow',
+    input: 'grey',
+    verbose: 'cyan',
+    prompt: 'grey',
+    success: 'green',
+    data: 'grey',
+    help: 'cyan',
+    warn: 'yellow',
+    info: 'blue',
+    error: 'red'
 });
 
 program
@@ -28,13 +31,18 @@ program.command("backup")
     .option("-p, --password <password>", "Password for the database")
     .option("-H, --host <host>", "Host of the database")
     .option("-P, --port <port>", "Port of the database")
-    .action((options) => {
-        if(!options.database || !options.username || !options.password) {
-            console.error("CLI error: Database name, username, and password are required.".error);
+    .action(async (options) => {
+        const config = {
+            database: options.database,
+            username: options.username,
+            password: options.password,
+            host: options.host || 'localhost',
+            port: options.port || 5432
+        };
+        if (await validate_connection(config) === false) {
             process.exit(1);
         }
-        console.log(`Creating a backup of the ${options.database} ${options.username} database...`.success);
-        backup_cmd(options.username, options.password, options.host || 'localhost', options.port || 5432, options.database);
+        backup_cmd(config);
     });
 
 program.command("restore")
@@ -46,7 +54,7 @@ program.command("restore")
     .option("-H, --host <host>", "Host of the database")
     .option("-P, --port <port>", "Port of the database")
     .action((options) => {
-        if(!options.database || !options.username || !options.password) {
+        if (!options.database || !options.username || !options.password) {
             console.error("CLI error: Database name, username, and password are required.".error);
             process.exit(1);
         }

@@ -1,1 +1,6 @@
 node_modules
+task.txt
+*.sql
+*.dump
+*.tar
+*.txt

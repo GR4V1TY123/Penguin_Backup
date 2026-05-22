@@ -13,6 +13,9 @@
   "dependencies": {
     "colors": "^1.4.0",
     "commander": "^14.0.3",
+    "inquirer": "^13.4.3",
+    "ora": "^9.4.0",
+    "pg": "^8.21.0",
     "yargs": "^18.0.0"
   }
 }
