@@ -2,7 +2,9 @@ import { spawn } from "node:child_process";
 import ora from "ora";
 import select, { Separator } from '@inquirer/select';
 import inquirer from 'inquirer';
-import { compress_backup } from "./compress.js";
+import { compress_backup } from "../utils/compress.js";
+import path from "node:path";
+import { logger } from "../utils/logger.js";
 
 export const backup_cmd = async (config) => {
 
@@ -19,8 +21,9 @@ export const backup_cmd = async (config) => {
     const file_type = backup_fileType || '.dump';
 
     const backup_cmd = `pg_dump`;
-    const make_backup_directory = spawn('mkdir', ['-p', `backups_${config.database}`]);
-    const backup_Directory = `backups_${config.database}/backup_${config.username}_${config.database}_${new Date().toISOString().slice(0, 19).replace(/[-:]/g, '')}${file_type}`;
+    const backup_path = path.resolve('../', `backups/${config.database}`);
+    const make_backup_directory = spawn('mkdir', ['-p', backup_path]);
+    const backup_location = `${backup_path}\\backup_${config.username}_${config.database}_${new Date().toISOString().slice(0, 19).replace(/[-:]/g, '')}${file_type}`;
 
     const ls = spawn(backup_cmd, [
         "-U", config.username,
@@ -28,7 +31,7 @@ export const backup_cmd = async (config) => {
         "-p", config.port,
         "-d", config.database,
         "-F", file_type === '.sql' ? 'p' : file_type === '.dump' ? 'c' : file_type === 'directory' ? 'd' : file_type === '.tar' ? 't' : 'c',
-        "-f", backup_Directory
+        "-f", backup_location
     ], {
         env: {
             ...process.env,
@@ -41,21 +44,28 @@ export const backup_cmd = async (config) => {
     });
 
     ls.stderr.on('data', (data) => {
-        console.error(`${data.toString().red}`);
+        console.error(`stderr: ${data}`);
     });
 
     ls.on('error', (err) => {
-        console.error(`Failed to start backup process: ${err}`);
+        logger.error(`Failed to start backup process`, {
+            operation: "backup",
+            error: err.message,
+            suggestion: "Please check your database connection and try again."
+        });
         backup_spinner.fail('Backup Failed!');
     });
 
     ls.on('exit', (code) => {
         if (code === 0) {
-            console.log(`Backup for ${config.database} created successfully at ${backup_Directory}`.success);
+            logger.info(`Backup for ${config.database} created successfully at ${backup_location}`);
             backup_spinner.succeed('Backup Created Successfully!');
-            compress_backup(backup_Directory);
+            compress_backup(backup_location);
         } else {
-            console.error(`Backup process exited with code ${code}`.error);
+            logger.error(`Backup process exited with code ${code}`, {
+                operation: "backup",
+                suggestion: "Please try again later."
+            });
             backup_spinner.fail('Backup Failed!');
         }
     })

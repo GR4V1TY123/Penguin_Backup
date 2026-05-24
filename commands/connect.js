@@ -1,6 +1,7 @@
 import ora from 'ora';
 import pg from 'pg'
 import colors from 'colors';
+import { logger } from '../utils/logger.js';
 
 const { Pool, Client } = pg
 
@@ -22,14 +23,16 @@ export const validate_connection = async (config) => {
             await client.end();
             break;
         } catch (err) {
-            console.log(`Connection attempt ${i + 1} failed: ${err.message}`.error);
         } finally {
             await client.end();
             await new Promise(resolve => setTimeout(resolve, 1000));
         }
     }
     if (i === 3) {
-        console.log('All connection attempts failed. Please check your credentials and try again.'.error);
+        logger.error('Database connection failed after retries', {
+            operation: "connect",
+            suggestion: "Please check your connection details and try again."
+        });
         validate_spinner.fail('Connection Failed!');
         return false;
     }

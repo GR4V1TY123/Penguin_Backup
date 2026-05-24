@@ -6,3 +6,5 @@ task.txt
 *.txt
 *.log
 *.gz
+backups/**/*
+logs/**/*

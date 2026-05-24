@@ -2,8 +2,8 @@ import { program } from "commander";
 import colors from 'colors';
 import inquirer from 'inquirer';
 import ora from 'ora';
-import { backup_cmd } from "../postgres/backup.js";
-import { validate_connection } from "../postgres/validate.js";
+import { backup_cmd } from "../commands/backup.js";
+import { validate_connection } from "../commands/connect.js";
 
 colors.setTheme({
     silly: 'rainbow',
@@ -55,17 +55,17 @@ program.command("restore")
     .option("-P, --port <port>", "Port of the database")
     .action((options) => {
         if (!options.database || !options.username || !options.password) {
-            console.error("CLI error: Database name, username, and password are required.".error);
+            console.error("CLI error: Database name, username, and password are required.");
             process.exit(1);
         }
-        console.log(`Restoring the ${options.database} ${options.username} database...`.success);
+        logger.info(`Restoring the ${options.database} ${options.username} database...`);
     });
 
 program.command("listdb")
     .description("List all available databases")
     .version("1.0.0")
     .action(() => {
-        console.log("Listing all available databases...".info);
+        logger.info("Listing all available databases...");
     });
 
 program.parse();
