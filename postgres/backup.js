@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import ora from "ora";
 import select, { Separator } from '@inquirer/select';
 import inquirer from 'inquirer';
+import { compress_backup } from "./compress.js";
 
 export const backup_cmd = async (config) => {
 
@@ -52,6 +53,7 @@ export const backup_cmd = async (config) => {
         if (code === 0) {
             console.log(`Backup for ${config.database} created successfully at ${backup_Directory}`.success);
             backup_spinner.succeed('Backup Created Successfully!');
+            compress_backup(backup_Directory);
         } else {
             console.error(`Backup process exited with code ${code}`.error);
             backup_spinner.fail('Backup Failed!');
