@@ -5,6 +5,7 @@ import inquirer from 'inquirer';
 import { compress_backup } from "../utils/compress.js";
 import path from "node:path";
 import { logger } from "../utils/logger.js";
+import fs from "fs";
 
 export const backup_cmd = async (config) => {
 
@@ -21,10 +22,11 @@ export const backup_cmd = async (config) => {
     const file_type = backup_fileType || '.dump';
 
     const backup_cmd = `pg_dump`;
-    const backup_path = path.resolve('../', `backups/${config.database}`);
+    const backup_path = path.resolve(`../backups/${config.database}`);
     const make_backup_directory = spawn('mkdir', ['-p', backup_path]);
     const backup_location = `${backup_path}\\backup_${config.username}_${config.database}_${new Date().toISOString().slice(0, 19).replace(/[-:]/g, '')}${file_type}`;
 
+    const start_time = Date.now();
     const ls = spawn(backup_cmd, [
         "-U", config.username,
         "-h", config.host,
@@ -51,20 +53,31 @@ export const backup_cmd = async (config) => {
         logger.error(`Failed to start backup process`, {
             operation: "backup",
             error: err.message,
+            status: "failure",
             suggestion: "Please check your database connection and try again."
         });
         backup_spinner.fail('Backup Failed!');
     });
 
     ls.on('exit', (code) => {
+        const end_time = Date.now();
+        const duration = (end_time - start_time) / 1000;
         if (code === 0) {
-            logger.info(`Backup for ${config.database} created successfully at ${backup_location}`);
-            backup_spinner.succeed('Backup Created Successfully!');
+            const file_size = fs.statSync(backup_location).size / (1024*1024);
+            logger.info(`Backup for ${config.database} created successfully at ${backup_location}`, {
+                operation: "backup",
+                status: "success",
+                file_size: `${file_size.toFixed(3)} MB`,
+                duration: `${duration.toFixed(3)} s`
+            });
+            backup_spinner.succeed('Backup Created Successfully in ' + duration.toFixed(3) + ' seconds!\nSaved at ' + backup_location);
             compress_backup(backup_location);
         } else {
             logger.error(`Backup process exited with code ${code}`, {
                 operation: "backup",
-                suggestion: "Please try again later."
+                status: "failure",
+                suggestion: "Please try again later.",
+                duration: `${duration.toFixed(3)} s`
             });
             backup_spinner.fail('Backup Failed!');
         }

@@ -6,11 +6,15 @@ import { logger } from './logger.js';
 const delete_raw_backup = async (backup_file) => {
     try {
         await fs.promises.unlink(backup_file);
-        logger.info(`Raw backup deleted successfully: ${backup_file}`);
+        logger.info(`Raw backup deleted successfully: ${backup_file}`, {
+            operation: "delete_raw_backup",
+            status: "success"
+        });
     } catch (error) {
         logger.error(`Failed to delete raw backup`, {
             operation: "delete_raw_backup",
             error: error.message,
+            status: "failure",
             suggestion: "Please check the file permissions and try again."
         });
     }
@@ -22,17 +26,28 @@ export const compress_backup = async (backup_file) => {
     const raw = fs.createReadStream(backup_file);
     const rawSize = fs.statSync(backup_file).size / (1024*1024);
     const compressed = fs.createWriteStream(backup_file + '.gz');
+    const start_time = Date.now();
 
     raw.pipe(gzip).pipe(compressed).on('finish', async () => {
         const compressedSize = fs.statSync(backup_file + '.gz').size / (1024*1024);
-        logger.info(`Backup compressed successfully: ${backup_file}.gz (Original Size: ${rawSize.toFixed(3)} MB -> Compressed Size: ${compressedSize.toFixed(3)} MB)`);
-        await delete_raw_backup(backup_file);
-        spinner.succeed('Backup Compressed Successfully!');
+        const end_time = Date.now();
+        const duration = (end_time - start_time) / 1000;
+        logger.info(`Backup compressed successfully`, {
+            operation: "compress_backup",
+            status: "success",
+            file_size: `${compressedSize.toFixed(3)} MB (Original: ${rawSize.toFixed(3)} MB)`,
+            suggestion: "You can find the compressed backup at the same location with a .gz extension.",
+            duration: `${duration.toFixed(3)} s`
+        });
+        // await delete_raw_backup(backup_file);
+        spinner.succeed('Backup Compressed Successfully! \nSaved at ' + backup_file + '.gz');
     }).on('error', (err) => {
         logger.error(`Failed to compress backup`, {
             operation: "compress_backup",
             error: err.message,
-            suggestion: "Please check the file permissions and try again."
+            status: "failure",
+            suggestion: "Please check the file permissions and try again.",
+            duration: `${((Date.now() - start_time) / 1000).toFixed(3)} s`
         });
         spinner.fail('Backup Compression Failed!');
     });

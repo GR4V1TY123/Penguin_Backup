@@ -4,6 +4,7 @@ import inquirer from 'inquirer';
 import ora from 'ora';
 import { backup_cmd } from "../commands/backup.js";
 import { validate_connection } from "../commands/connect.js";
+import { restore_cmd } from "../commands/restore.js";
 
 colors.setTheme({
     silly: 'rainbow',
@@ -53,19 +54,27 @@ program.command("restore")
     .option("-p, --password <password>", "Password for the database")
     .option("-H, --host <host>", "Host of the database")
     .option("-P, --port <port>", "Port of the database")
-    .action((options) => {
-        if (!options.database || !options.username || !options.password) {
-            console.error("CLI error: Database name, username, and password are required.");
+    .option("-f, --file <file>", "Path to the backup file to restore from")
+    .action(async (options) => {
+        const config = {
+            database: options.database,
+            username: options.username,
+            password: options.password,
+            host: options.host || 'localhost',
+            port: options.port || 5432,
+            file: options.file
+        };
+        if (await validate_connection(config) === false) {
             process.exit(1);
         }
-        logger.info(`Restoring the ${options.database} ${options.username} database...`);
+        restore_cmd(config);
     });
 
 program.command("listdb")
     .description("List all available databases")
     .version("1.0.0")
     .action(() => {
-        logger.info("Listing all available databases...");
+        // logger.info("Listing all available databases...");
     });
 
 program.parse();

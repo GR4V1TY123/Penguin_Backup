@@ -13,16 +13,12 @@ export const logger = winston.createLogger({
         }),
         winston.format.prettyPrint(),
         winston.format.errors({ stack: true }),
-        winston.format.printf(({ timestamp, level, message, operation, suggestion }) => {
-            if (operation) {
-                return `${timestamp} [${level}]: ${message} (Operation: ${operation}), Suggestion: ${suggestion}`;
-            }
-            return `${timestamp} [${level}]: ${message}`;
+        winston.format.printf(({ timestamp, level, message, operation, file_size, duration, status, error, suggestion }) => {
+            return `${timestamp} [${level}]: Operation: ${operation}\nStatus: ${status}${file_size ? ` | File Size: ${file_size}` : ''}${duration ? ` | Duration: ${duration}` : ''}\n${message} ${error ? `\nError: ${error.stack || error}` : ''}${suggestion ? `\nSuggestion: ${suggestion}` : ''}\n`;
         })
     ),
     transports: [
-        new winston.transports.Console(),
-        new winston.transports.File({ filename: `${log_path}/error.log`, level: 'error'}),
+        new winston.transports.File({ filename: `${log_path}/error.log`, level: 'error' }),
         new winston.transports.File({ filename: `${log_path}/combined.log` })
     ]
 });
