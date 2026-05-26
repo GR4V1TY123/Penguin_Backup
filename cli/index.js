@@ -4,7 +4,7 @@ import inquirer from 'inquirer';
 import ora from 'ora';
 import { backup_cmd } from "../commands/backup.js";
 import { validate_connection } from "../commands/connect.js";
-import { restore_cmd } from "../commands/restore.js";
+import { restore_cmd } from "../commands/restore/restore_main.js";
 
 colors.setTheme({
     silly: 'rainbow',
