@@ -54,7 +54,7 @@ program.command("restore")
     .option("-p, --password <password>", "Password for the database")
     .option("-H, --host <host>", "Host of the database")
     .option("-P, --port <port>", "Port of the database")
-    .option("-f, --file <file>", "Path to the backup file to restore from")
+    // .option("-f, --file <file>", "Path to the backup file to restore from")
     .action(async (options) => {
         const config = {
             database: options.database,
@@ -62,7 +62,7 @@ program.command("restore")
             password: options.password,
             host: options.host || 'localhost',
             port: options.port || 5432,
-            file: options.file
+            // file: options.file
         };
         if (await validate_connection(config) === false) {
             process.exit(1);
