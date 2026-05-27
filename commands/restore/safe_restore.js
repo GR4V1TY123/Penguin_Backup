@@ -4,50 +4,236 @@ import { spawn } from "node:child_process";
 import { logger } from "../../utils/logger.js";
 import fs from "fs";
 import select, { Separator } from '@inquirer/select';
+import pg from 'pg'
+const { Pool, Client } = pg
 
 // steps:
 // 1. Create temp db
 // 2. Restore backup to temp db
-// 3. Option to switch to temp db and drop old db, or rollback to old db if anything goes wrong with temp db
-// 4. If switch to temp db, rename temp db to old db name
-// 5. else rollback to old db by dropping temp db and keeping old db as is
+// 3. rename temp db to old db name and compare the differences, and confirm with user if they want to keep the changes or rollback to old db by dropping temp db and keeping old db as is
 
-const drop_db = async (db_name, config) => {
-    const drop_db_process = spawn('dropdb', [
-        db_name,
-        "-U", config.username,
-        "-h", config.host,
-        "-p", config.port,
-        "-f"
+const run_process = (command, args, options = {}) => {
+
+    return new Promise((resolve, reject) => {
+        const process = spawn(command, args, options);
+        process.stderr.on('data', (data) => {
+            console.error(`stderr: ${data}`);
+        });
+        process.on('error', (err) => {
+            reject(err);
+        });
+        process.on('error', reject);
+        process.on('close', (code) => {
+            if (code !== 0) {
+                reject(new Error(`Process failed with code ${code}`));
+            } else {
+                resolve();
+            }
+        });
+    });
+};
+
+const compare_databases = async (config, temp_db_name) => {
+    const client = new Client({
+        user: config.username,
+        host: config.host,
+        database: config.database,
+        password: config.password,
+        port: config.port,
+    });
+    await client.connect();
+
+    const temp_client = new Client({
+        user: config.username,
+        host: config.host,
+        database: temp_db_name,
+        password: config.password,
+        port: config.port,
+    });
+    await temp_client.connect();
+    try {
+
+        const old_db_tables = await client.query(`
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_type = 'BASE TABLE';
+        `);
+
+        const temp_db_tables = await temp_client.query(`
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_type = 'BASE TABLE';
+        `);
+
+        console.log('Old db tables:', old_db_tables.rows.map(row => row.table_name));
+        console.log('Temp db tables:', temp_db_tables.rows.map(row => row.table_name));
+
+        const old_tables = old_db_tables.rows.map(row => row.table_name);
+        const temp_tables = temp_db_tables.rows.map(row => row.table_name);
+
+        const differences = {
+            old_tables: old_tables,
+            temp_tables: temp_tables,
+            common_tables: old_tables.filter(table => temp_tables.includes(table)),
+            table_differences: []
+        }
+
+        await Promise.all(differences.common_tables.map(async (table) => {
+            const temp_rows = await temp_client.query(`
+                SELECT COUNT(*) AS count FROM "${table}";
+            `);
+            const old_rows = await client.query(`
+                SELECT COUNT(*) AS count FROM "${table}";
+            `);
+            if (Number(temp_rows.rows[0].count) !== Number(old_rows.rows[0].count)) {
+                differences.table_differences.push({
+                    table,
+                    old_count: Number(old_rows.rows[0].count),
+                    temp_count: Number(temp_rows.rows[0].count)
+                });
+            }
+        })
+        );
+
+
+        if (differences.table_differences.length > 0 || differences.old_tables.length !== differences.temp_tables.length) {
+            console.log(`Table row count differences: ${differences.table_differences.map(diff => `${diff.table} | OLD count: ${diff.old_count} | NEW count: ${diff.temp_count}`).join(', ') || 'None'}`.yellow);
+            logger.info('Database comparison results', {
+                operation: 'compare_databases',
+                status: 'success',
+                message: `Table row count differences: ${differences.table_differences.map(diff => `${diff.table} | OLD count: ${diff.old_count} | NEW count: ${diff.temp_count}`).join(', ') || 'None'}`
+            });
+        } else {
+            console.log('No differences found between old and temp databases');
+            logger.info('Database comparison results', {
+                operation: 'compare_databases',
+                status: 'success',
+                message: 'No differences found between old and temp databases'
+            });
+        }
+    } catch (err) {
+        logger.error('Failed to compare databases', {
+            status: 'failure',
+            operation: 'compare_databases',
+            error: err.message,
+        });
+        throw err;
+    } finally {
+        await client.end();
+        await temp_client.end();
+    }
+};
+
+const delete_old_db = (config) => {
+    try {
+        return run_process('dropdb', [
+            config.database,
+            "-U", config.username,
+            "-h", config.host,
+            "-p", config.port,
+            "-f"
+        ], {
+            env: {
+                ...process.env,
+                PGPASSWORD: config.password
+            }
+        });
+
+    } catch (err) {
+        logger.error('Failed to delete old database', {
+            status: 'failure',
+            operation: 'delete_old_db',
+            error: err.message,
+        });
+        throw err;
+    }
+};
+
+const delete_temp_db = (config, temp_db_name) => {
+    try {
+        return run_process('dropdb', [
+            temp_db_name,
+            "-U", config.username,
+            "-h", config.host,
+            "-p", config.port
+        ], {
+            env: {
+                ...process.env,
+                PGPASSWORD: config.password
+            }
+        });
+    } catch (err) {
+        logger.error('Failed to delete temp database', {
+            status: 'failure',
+            operation: 'delete_temp_db',
+            error: err.message,
+        });
+        throw err;
+    }
+};
+
+const create_temp_db = (config, temp_db_name) => {
+    try {
+        return run_process('createdb', [
+            temp_db_name,
+            "-U", config.username,
+            "-h", config.host,
+            "-p", config.port
+        ], {
+            env: {
+                ...process.env,
+                PGPASSWORD: config.password
+            }
+        });
+    } catch (err) {
+        logger.error('Failed to create temp database', {
+            status: 'failure',
+            operation: 'create_temp_db',
+            error: err.message,
+        });
+        throw err;
+    }
+};
+
+const restore_to_temp_db = (config, temp_db_name, cmd) => {
+    const file_type = path.extname(config.file);
+    const psql_args = ["-U", config.username, "-h", config.host, "-p", config.port, "-d", temp_db_name, "-f", config.file];
+    const pg_restore_args = ["-U", config.username, "-h", config.host, "-p", config.port, "-d", temp_db_name, config.file];
+    return run_process(cmd, [
+        ...cmd === "psql" ? psql_args : pg_restore_args
     ], {
         env: {
             ...process.env,
             PGPASSWORD: config.password
         }
     });
-    drop_db_process.stderr.on('data', (data) => {
-        console.error(`stderr: ${data}`);
-    });
-    drop_db_process.on('close', (code) => {
-        if (code !== 0) {
-            logger.error(`Failed to drop database ${db_name} during safe restore`, {
-                operation: "safe_restore - drop db",
-                status: "failure",
-                suggestion: "Please check your database connection and try again."
-            });
-            reject(new Error(`Failed to drop database ${db_name} during safe restore`));
-        }
-    });
-    drop_db_process.on('error', (err) => {
-        logger.error(`Failed to start process to drop database ${db_name} during safe restore`, {
-            operation: "safe_restore - drop db",
-            error: err.message,
-            status: "failure",
-            suggestion: "Please check your database connection and try again."
+};
+
+const rename_temp_db = (config, temp_db_name) => {
+    try {
+        return run_process('psql', [
+            "-U", config.username,
+            "-h", config.host,
+            "-p", config.port,
+            "-d", "postgres",
+            "-c", `ALTER DATABASE "${temp_db_name}" RENAME TO "${config.database}";`
+        ], {
+            env: {
+                ...process.env,
+                PGPASSWORD: config.password
+            }
         });
-        reject(new Error(`Failed to start process to drop database ${db_name} during safe restore`));
-    });
-}
+    } catch (err) {
+        logger.error('Failed to rename temp database to old database name', {
+            status: 'failure',
+            operation: 'rename_temp_db',
+            error: err.message,
+        });
+        throw err;
+    }
+};
 
 export const safe_restore = async (config) => {
     const restore_spinner = ora('Restoring Backup to ' + config.database + ' via Safe Restore...').start();
@@ -60,181 +246,24 @@ export const safe_restore = async (config) => {
     } else if (file_type === '.dump') {
         cmd = "pg_restore";
     }
-    const temp_db_name = config.database + '_temp';
-    const create_db = spawn('createdb', [
-        temp_db_name,
-        "-U", config.username,
-        "-h", config.host,
-        "-p", config.port
-    ], {
-        env: {
-            ...process.env,
-            PGPASSWORD: config.password
-        }
+    const temp_db_name = config.database + '_temp_' + Date.now();
+    await create_temp_db(config, temp_db_name);
+    await restore_to_temp_db(config, temp_db_name, cmd);
+    await compare_databases(config, temp_db_name);
+    const option = await select({
+        message: 'What would you like to do?',
+        choices: [
+            { name: 'Proceed with restore', value: 'proceed' },
+            { name: 'Rollback to old database', value: 'rollback' },
+        ]
     });
 
-    create_db.stderr.on('data', (data) => {
-        console.error(`stderr: ${data}`);
-    });
-    create_db.on('error', (err) => {
-        logger.error(`Failed to start process to create temporary database for safe restore`, {
-            operation: "safe_restore - create temp db",
-            error: err.message,
-            status: "failure",
-            suggestion: "Please check your database connection and try again."
-        });
-        restore_spinner.fail('Failed to create temporary database for safe restore');
-        return;
-    });
-
-    create_db.on('close', (code) => {
-        if (code !== 0) {
-            logger.error(`Failed to create temporary database for safe restore`, {
-                operation: "safe_restore - create temp db",
-                status: "failure",
-                suggestion: "Please check your database connection and try again."
-            });
-            restore_spinner.fail('Failed to create temporary database for safe restore');
-            return;
-        } else {
-            const psql_args = ["-U", config.username, "-h", config.host, "-p", config.port, "-d", temp_db_name, "-f", config.file];
-            const pg_restore_args = ["-U", config.username, "-h", config.host, "-p", config.port, "-d", temp_db_name, config.file];
-            const restore_temp_db = spawn(cmd, [
-                ...cmd === "psql" ? psql_args : pg_restore_args
-            ], {
-                env: {
-                    ...process.env,
-                    PGPASSWORD: config.password
-                }
-            });
-            restore_temp_db.stderr.on('data', (data) => {
-                console.error(`stderr: ${data}`);
-            });
-            restore_temp_db.on('close', async (code) => {
-                if (code !== 0) {
-                    logger.error(`Failed to restore backup to temporary database for safe restore`, {
-                        operation: "safe_restore - restore to temp db",
-                        status: "failure",
-                        suggestion: "Please check your database connection and try again."
-                    });
-                    restore_spinner.fail('Failed to restore backup to temporary database for safe restore');
-                    return;
-                } else {
-                    const option = await select({
-                        message: 'Backup restored to temporary database successfully. What would you like to do?',
-                        choices: [
-                            { name: 'Switch to temporary database and drop old database', value: 'switch' },
-                            { name: 'Rollback to old database and keep it as is', value: 'rollback' }
-                        ]
-                    });
-                    if (option === 'switch') {
-                        const drop_old_db = spawn('dropdb', [
-                            config.database,
-                            "-U", config.username,
-                            "-h", config.host,
-                            "-p", config.port,
-                            "-f"
-                        ], {
-                            env: {
-                                ...process.env,
-                                PGPASSWORD: config.password
-                            }
-                        });
-                        drop_old_db.stderr.on('data', (data) => {
-                            console.error(`stderr: ${data}`);
-                        });
-                        drop_old_db.on('close', (code) => {
-                            if (code !== 0) {
-                                logger.error(`Failed to drop old database during safe restore`, {
-                                    operation: "safe_restore - drop old db",
-                                    status: "failure",
-                                    suggestion: "Please check your database connection and try again."
-                                });
-                                restore_spinner.fail('Failed to drop old database during safe restore');
-                                return;
-                            } else {
-                                const rename_temp_db = spawn('psql', [
-                                    "-U", config.username,
-                                    "-h", config.host,
-                                    "-p", config.port,
-                                    "-d", "postgres",
-                                    "-c", `ALTER DATABASE "${temp_db_name}" RENAME TO "${config.database}";`
-                                ], {
-                                    env: {
-                                        ...process.env,
-                                        PGPASSWORD: config.password
-                                    }
-                                });
-                                rename_temp_db.stderr.on('data', (data) => {
-                                    console.error(`stderr: ${data}`);
-                                });
-                                rename_temp_db.on('close', (code) => {
-                                    if (code !== 0) {
-                                        logger.error(`Failed to rename temporary database during safe restore`, {
-                                            operation: "safe_restore - rename temp db",
-                                            status: "failure",
-                                            suggestion: "Please check your database connection and try again."
-                                        });
-                                    } else {
-                                        const end_time = Date.now();
-                                        const duration = (end_time - start_time) / 1000;
-                                        logger.info(`Safe restore process completed successfully`, {
-                                            operation: "safe_restore - switch",
-                                            status: "success",
-                                            duration: `${duration.toFixed(3)} s`
-                                        });
-                                        restore_spinner.succeed('Safe restore process completed successfully');
-                                    }
-                                });
-                            }
-                        });
-                    } else if (option === 'rollback') {
-                        const drop_temp_db = spawn('dropdb', [
-                            temp_db_name,
-                            "-U", config.username,
-                            "-h", config.host,
-                            "-p", config.port,
-                            "-f"
-                        ], {
-                            env: {
-                                ...process.env,
-                                PGPASSWORD: config.password
-                            }
-                        });
-                        drop_temp_db.on('close', (code) => {
-                            if (code !== 0) {
-                                logger.error(`Failed to drop temporary database during safe restore`, {
-                                    operation: "safe_restore - drop temp db",
-                                    status: "failure",
-                                    suggestion: "Please check your database connection and try again."
-                                });
-                                restore_spinner.fail('Failed to drop temporary database during safe restore');
-                                return;
-                            } else {
-                                const end_time = Date.now();
-                                const duration = (end_time - start_time) / 1000;
-                                logger.info(`Safe restore process rolled back to old database successfully`, {
-                                    operation: "safe_restore - rollback",
-                                    status: "success",
-                                    duration: `${duration.toFixed(3)} s`
-                                });
-                                restore_spinner.succeed('Safe restore process rolled back to old database successfully');
-                            }
-                        });
-                    }
-                }
-            });
-            restore_temp_db.on('error', (err) => {
-                logger.error(`Failed to start restore process to temporary database for safe restore`, {
-                    operation: "safe_restore - restore to temp db",
-                    error: err.message,
-                    status: "failure",
-                    suggestion: "Please check your database connection and try again."
-                });
-                restore_spinner.fail('Failed to start restore process to temporary database for safe restore');
-                return;
-            });
-        }
-
-    });
+    if (option === 'proceed') {
+        await delete_old_db(config);
+        await rename_temp_db(config, temp_db_name);
+        restore_spinner.succeed('Database restored successfully in ' + ((Date.now() - start_time) / 1000).toFixed(2) + ' seconds');
+    } else {
+        await delete_temp_db(config, temp_db_name);
+        restore_spinner.succeed('Rollback successful, old database is intact');
+    }
 }
