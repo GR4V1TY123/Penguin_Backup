@@ -5,6 +5,9 @@ import ora from 'ora';
 import { backup_cmd } from "../commands/backup.js";
 import { validate_connection } from "../commands/connect.js";
 import { restore_cmd } from "../commands/restore/restore_main.js";
+import config from "../config.json" with { type: "json" };
+import { detect_db_type } from "../utils/detect_db.js";
+import { get_adapter } from "../adapters/get_adapter.js";
 
 colors.setTheme({
     silly: 'rainbow',
@@ -33,17 +36,19 @@ program.command("backup")
     .option("-H, --host <host>", "Host of the database")
     .option("-P, --port <port>", "Port of the database")
     .action(async (options) => {
-        const config = {
+        const inputs = config.user || {
             database: options.database,
             username: options.username,
             password: options.password,
             host: options.host || 'localhost',
             port: options.port || 5432
         };
-        if (await validate_connection(config) === false) {
+        const db_type = await detect_db_type(inputs);
+        if (db_type === null) {
+            console.log(colors.error('Unable to connect to the database with the provided credentials. Please check your connection details and try again.'));
             process.exit(1);
         }
-        backup_cmd(config);
+        backup_cmd(inputs);
     });
 
 program.command("restore")
@@ -56,7 +61,7 @@ program.command("restore")
     .option("-P, --port <port>", "Port of the database")
     // .option("-f, --file <file>", "Path to the backup file to restore from")
     .action(async (options) => {
-        const config = {
+        const inputs = config.user || {
             database: options.database,
             username: options.username,
             password: options.password,
@@ -64,10 +69,13 @@ program.command("restore")
             port: options.port || 5432,
             // file: options.file
         };
-        if (await validate_connection(config) === false) {
+        const db_type = await detect_db_type(inputs);
+        if (db_type === null) {
+            console.log(colors.error('Unable to connect to the database with the provided credentials. Please check your connection details and try again.'));
             process.exit(1);
         }
-        restore_cmd(config);
+        const adapter = await get_adapter(db_type.type);
+        restore_cmd(inputs);
     });
 
 program.command("listdb")

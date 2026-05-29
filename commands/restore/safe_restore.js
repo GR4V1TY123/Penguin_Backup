@@ -5,33 +5,14 @@ import { logger } from "../../utils/logger.js";
 import fs from "fs";
 import select, { Separator } from '@inquirer/select';
 import pg from 'pg'
+import { run_process } from './../../utils/run_process.js';
+
 const { Pool, Client } = pg
 
 // steps:
 // 1. Create temp db
 // 2. Restore backup to temp db
 // 3. rename temp db to old db name and compare the differences, and confirm with user if they want to keep the changes or rollback to old db by dropping temp db and keeping old db as is
-
-const run_process = (command, args, options = {}) => {
-
-    return new Promise((resolve, reject) => {
-        const process = spawn(command, args, options);
-        process.stderr.on('data', (data) => {
-            console.error(`stderr: ${data}`);
-        });
-        process.on('error', (err) => {
-            reject(err);
-        });
-        process.on('error', reject);
-        process.on('close', (code) => {
-            if (code !== 0) {
-                reject(new Error(`Process failed with code ${code}`));
-            } else {
-                resolve();
-            }
-        });
-    });
-};
 
 const compare_databases = async (config, temp_db_name) => {
     const client = new Client({
@@ -110,7 +91,7 @@ const compare_databases = async (config, temp_db_name) => {
             logger.info('Database comparison results', {
                 operation: 'compare_databases',
                 status: 'success',
-                message: 'No differences found between old and temp databases'
+                message: 'No differences found between old and temp databases row counts'
             });
         }
     } catch (err) {
@@ -197,8 +178,9 @@ const create_temp_db = (config, temp_db_name) => {
     }
 };
 
-const restore_to_temp_db = (config, temp_db_name, cmd) => {
+const restore_to_temp_db = async (config, temp_db_name, cmd, spinner) => {
     const file_type = path.extname(config.file);
+    const start_time = Date.now();
     const psql_args = ["-U", config.username, "-h", config.host, "-p", config.port, "-d", temp_db_name, "-f", config.file];
     const pg_restore_args = ["-U", config.username, "-h", config.host, "-p", config.port, "-d", temp_db_name, config.file];
     return run_process(cmd, [
@@ -208,6 +190,16 @@ const restore_to_temp_db = (config, temp_db_name, cmd) => {
             ...process.env,
             PGPASSWORD: config.password
         }
+    }).catch(err => {
+        logger.error('Failed to restore backup to temp database', {
+            status: 'failure',
+            operation: 'restore_to_temp_db',
+            error: err.message,
+        });
+        spinner.fail('Failed to restore backup to temp database');
+        throw err;
+    }).then(() => {
+        spinner.succeed('Backup restored to temp database successfully in ' + ((Date.now() - start_time) / 1000).toFixed(3) + ' seconds!');
     });
 };
 
@@ -237,7 +229,6 @@ const rename_temp_db = (config, temp_db_name) => {
 
 export const safe_restore = async (config) => {
     const restore_spinner = ora('Restoring Backup to ' + config.database + ' via Safe Restore...').start();
-    const start_time = Date.now();
 
     const file_type = path.extname(config.file);
     let cmd;
@@ -248,7 +239,7 @@ export const safe_restore = async (config) => {
     }
     const temp_db_name = config.database + '_temp_' + Date.now();
     await create_temp_db(config, temp_db_name);
-    await restore_to_temp_db(config, temp_db_name, cmd);
+    await restore_to_temp_db(config, temp_db_name, cmd, restore_spinner);
     await compare_databases(config, temp_db_name);
     const option = await select({
         message: 'What would you like to do?',
@@ -261,9 +252,8 @@ export const safe_restore = async (config) => {
     if (option === 'proceed') {
         await delete_old_db(config);
         await rename_temp_db(config, temp_db_name);
-        restore_spinner.succeed('Database restored successfully in ' + ((Date.now() - start_time) / 1000).toFixed(2) + ' seconds');
     } else {
         await delete_temp_db(config, temp_db_name);
-        restore_spinner.succeed('Rollback successful, old database is intact');
+        restore_spinner.info('Rolled back to old database successfully');
     }
 }

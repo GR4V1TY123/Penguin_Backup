@@ -7,6 +7,65 @@ import path from "node:path";
 import { logger } from "../utils/logger.js";
 import fs from "fs";
 
+const make_backup = async (config, backup_location, file_type) => {
+    try {
+        const start_time = Date.now();
+        return run_process('pg_dump', [
+            "-U", config.username,
+            "-h", config.host,
+            "-p", config.port,
+            "-F", file_type === '.sql' ? 'p' : 'c',
+            "-f", backup_location,
+            config.database
+        ], {
+            env: {
+                ...process.env,
+                PGPASSWORD: config.password
+            }
+        }).then(() => {
+            const end_time = Date.now();
+            const duration = (end_time - start_time) / 1000;
+            logger.info('Backup created successfully', {
+                operation: "backup",
+                status: "success",
+                file_size: `${(fs.statSync(backup_location).size / (1024 * 1024)).toFixed(3)} MB`,
+                suggestion: "You can find the backup at " + backup_location,
+                duration: `${duration.toFixed(3)} s`
+            });
+            return backup_location;
+        }).catch(err => {
+            logger.error(`Failed to create backup`, {
+                operation: "backup",
+                error: err.message,
+                status: "failure",
+                suggestion: "Please check your database connection and try again."
+            });
+            throw err;
+        });
+    } catch (err) {
+        logger.error(`Failed to create backup`, {
+            operation: "backup",
+            error: err.message,
+            status: "failure",
+            suggestion: "Please check your database connection and try again."
+        });
+        backup_spinner.fail('Backup Failed!');
+    }
+}
+
+const make_backup_directory = () => {
+    try {
+        return run_process('mkdir', ['-p', path.resolve(`../backups/${config.database}`)]);
+    } catch (err) {
+        logger.error(`Failed to create backup directory`, {
+            operation: "backup - make backup directory",
+            error: err.message,
+            status: "failure",
+            suggestion: "Please check your file system permissions and try again."
+        });
+        throw err;
+    }
+}
 export const backup_cmd = async (config) => {
 
     const backup_spinner = ora('Creating Backup of ' + config.database + '...').start();
@@ -23,63 +82,11 @@ export const backup_cmd = async (config) => {
 
     const backup_cmd = `pg_dump`;
     const backup_path = path.resolve(`../backups/${config.database}`);
-    const make_backup_directory = spawn('mkdir', ['-p', backup_path]);
+
+    await make_backup_directory();
+
     const backup_location = `${backup_path}\\backup_${config.username}_${config.database}_${new Date().toISOString().slice(0, 19).replace(/[-:]/g, '')}${file_type}`;
+    await make_backup(config, backup_location, file_type);
 
-    const start_time = Date.now();
-    const ls = spawn(backup_cmd, [
-        "-U", config.username,
-        "-h", config.host,
-        "-p", config.port,
-        "-d", config.database,
-        "-F", file_type === '.sql' ? 'p' : file_type === '.dump' ? 'c' : file_type === 'directory' ? 'd' : file_type === '.tar' ? 't' : 'c',
-        "-f", backup_location
-    ], {
-        env: {
-            ...process.env,
-            PGPASSWORD: config.password
-        }
-    });
-
-    ls.stdout.on('data', (data) => {
-        console.log(`stdout: ${data}`);
-    });
-
-    ls.stderr.on('data', (data) => {
-        console.error(`stderr: ${data}`);
-    });
-
-    ls.on('error', (err) => {
-        logger.error(`Failed to start backup process`, {
-            operation: "backup",
-            error: err.message,
-            status: "failure",
-            suggestion: "Please check your database connection and try again."
-        });
-        backup_spinner.fail('Backup Failed!');
-    });
-
-    ls.on('exit', (code) => {
-        const end_time = Date.now();
-        const duration = (end_time - start_time) / 1000;
-        if (code === 0) {
-            const file_size = fs.statSync(backup_location).size / (1024*1024);
-            logger.info(`Backup for ${config.database} created successfully at ${backup_location}`, {
-                operation: "backup",
-                status: "success",
-                file_size: `${file_size.toFixed(3)} MB`,
-                duration: `${duration.toFixed(3)} s`
-            });
-            backup_spinner.succeed('Backup Created Successfully in ' + duration.toFixed(3) + ' seconds!\nSaved at ' + backup_location);
-            compress_backup(backup_location);
-        } else {
-            logger.error(`Backup process exited with code ${code}`, {
-                operation: "backup",
-                status: "failure",
-                suggestion: "Please try again later.",
-                duration: `${duration.toFixed(3)} s`
-            });
-            backup_spinner.fail('Backup Failed!');
-        }
-    })
+    await compress_backup(backup_location);
 };

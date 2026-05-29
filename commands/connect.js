@@ -2,6 +2,7 @@ import ora from 'ora';
 import pg from 'pg'
 import colors from 'colors';
 import { logger } from '../utils/logger.js';
+import { MongoClient } from 'mongodb';
 
 const { Pool, Client } = pg
 
@@ -10,8 +11,9 @@ export const validate_connection = async (config) => {
     const start_time = Date.now();
     let error_message;
     let i = 0;
+    const url = `mongodb://${config.username}:${config.password}@${config.host}:${config.port}`;
     for (i = 0; i < 3; i++) {
-        const client = new Client({
+        const postgres_client = new Client({
             user: config.username,
             host: config.host,
             database: config.database,
@@ -19,15 +21,16 @@ export const validate_connection = async (config) => {
             port: config.port,
         });
         try {
-            await client.connect();
-            await client.query('SELECT 1');
-            await client.end();
+            await postgres_client.connect();
+            await postgres_client.query('SELECT 1');
+            await postgres_client.end();
             break;
         } catch (err) {
             error_message = err.message;
+            await new Promise(resolve => setTimeout(resolve, 500));
         } finally {
-            await client.end();
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await postgres_client.end();
+            await mongo_client.close();
         }
     }
     if (i === 3) {

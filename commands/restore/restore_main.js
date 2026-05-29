@@ -4,20 +4,10 @@ import inquirer from 'inquirer';
 import path from "node:path";
 import { logger } from "../../utils/logger.js";
 import fs from "fs";
-import { full_restore } from "./full_restore.js";
 import zlib from "zlib";
 import { safe_restore } from './safe_restore.js';
 
 export const restore_cmd = async (config) => {
-
-    const restore_type = await select({
-        message: 'Select the restore type:',
-        choices: [
-            { name: 'Safe Restore (Safe)', value: 'safe', description: 'Restore via temporary database' },
-            { name: 'Full Restore (Risky)', value: 'full', description: 'Drop existing database and restore from backup' },
-        ]
-    });
-
     const start_time = Date.now();
 
     const selected_backup_file = await search({
@@ -56,10 +46,5 @@ export const restore_cmd = async (config) => {
         // if file is not compressed
         config.file = selected_backup_file;
     }
-
-    if (restore_type === 'full') {
-        await full_restore(config);
-    } else {
-        await safe_restore(config);
-    }
+    await safe_restore(config);
 }
