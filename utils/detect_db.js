@@ -59,15 +59,17 @@ const check_mongo_connection = async (config) => {
 
 export const detect_db_type = async (config) => {
     const validate_spinner = ora('Checking Database...').start();
-    const postgres_check = await check_postgres_connection(config);
-    if (postgres_check.success) {
-        validate_spinner.succeed('PostgreSQL Connection Verified!');
-        return "postgres";
-    }
-    const mongo_check = await check_mongo_connection(config);
-    if (mongo_check.success) {
-        validate_spinner.succeed('MongoDB Connection Verified!');
-        return "mongodb";
+    for (let i = 0; i < 3; i++) {
+        const postgres_check = await check_postgres_connection(config);
+        if (postgres_check.success) {
+            validate_spinner.succeed('PostgreSQL Connection Verified!');
+            return "postgres";
+        }
+        const mongo_check = await check_mongo_connection(config);
+        if (mongo_check.success) {
+            validate_spinner.succeed('MongoDB Connection Verified!');
+            return "mongodb";
+        }
     }
     logger.error('Unable to connect to the database with the provided credentials', {
         operation: "check_db",

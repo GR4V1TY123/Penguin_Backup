@@ -5,7 +5,7 @@ import { logger } from "../../utils/logger.js";
 import fs from "fs";
 import select, { Separator } from '@inquirer/select';
 import pg from 'pg'
-import { run_process } from './../../utils/run_process.js';
+import { run_process } from '../../utils/run_process.js';
 
 const { Pool, Client } = pg
 

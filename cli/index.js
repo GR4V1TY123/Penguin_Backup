@@ -1,10 +1,5 @@
 import { program } from "commander";
 import colors from 'colors';
-import inquirer from 'inquirer';
-import ora from 'ora';
-import { backup_cmd } from "../commands/backup.js";
-import { validate_connection } from "../commands/connect.js";
-import { restore_cmd } from "../commands/restore/restore_main.js";
 import config from "../config.json" with { type: "json" };
 import { detect_db_type } from "../utils/detect_db.js";
 import { get_adapter } from "../adapters/get_adapter.js";
@@ -44,11 +39,15 @@ program.command("backup")
             port: options.port || 5432
         };
         const db_type = await detect_db_type(inputs);
+        console.log(colors.success(`Database type detected: ${db_type}`));
+
         if (db_type === null) {
             console.log(colors.error('Unable to connect to the database with the provided credentials. Please check your connection details and try again.'));
             process.exit(1);
         }
-        backup_cmd(inputs);
+        inputs.type = db_type;
+        const adapter = await get_adapter(db_type);
+        adapter.backup(inputs);
     });
 
 program.command("restore")
@@ -74,8 +73,9 @@ program.command("restore")
             console.log(colors.error('Unable to connect to the database with the provided credentials. Please check your connection details and try again.'));
             process.exit(1);
         }
-        const adapter = await get_adapter(db_type.type);
-        restore_cmd(inputs);
+        inputs.type = db_type;
+        const adapter = await get_adapter(db_type);
+        adapter.restore(inputs);
     });
 
 program.command("listdb")

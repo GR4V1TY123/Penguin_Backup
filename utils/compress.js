@@ -3,6 +3,7 @@ import zlib from 'zlib';
 import ora from "ora";
 import { logger } from './logger.js';
 import select, { Separator } from '@inquirer/select';
+import {filesize, partial} from "filesize";
 
 
 const delete_raw_backup = async (backup_file) => {
@@ -26,18 +27,18 @@ export const compress_backup = async (backup_file) => {
     const spinner = ora('Compressing backup...').start();
     const gzip = zlib.createGzip();
     const raw = fs.createReadStream(backup_file);
-    const rawSize = fs.statSync(backup_file).size / (1024 * 1024);
+    const rawSize = filesize(fs.statSync(backup_file).size);
     const compressed = fs.createWriteStream(backup_file + '.gz');
     const start_time = Date.now();
 
     raw.pipe(gzip).pipe(compressed).on('finish', async () => {
-        const compressedSize = fs.statSync(backup_file + '.gz').size / (1024 * 1024);
+        const compressedSize = filesize(fs.statSync(backup_file + '.gz').size / (1024 * 1024));
         const end_time = Date.now();
         const duration = (end_time - start_time) / 1000;
         logger.info(`Backup compressed successfully`, {
             operation: "compress_backup",
             status: "success",
-            file_size: `${compressedSize.toFixed(3)} MB (Original: ${rawSize.toFixed(3)} MB)`,
+            file_size: `${compressedSize.toFixed(3)} (Original: ${rawSize.toFixed(3)})`,
             suggestion: "You can find the compressed backup at the same location with a .gz extension.",
             duration: `${duration.toFixed(3)} s`
         });

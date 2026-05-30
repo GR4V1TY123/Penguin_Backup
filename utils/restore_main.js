@@ -2,19 +2,17 @@ import select, { Separator } from '@inquirer/select';
 import { search } from '@inquirer/prompts';
 import inquirer from 'inquirer';
 import path from "node:path";
-import { logger } from "../../utils/logger.js";
 import fs from "fs";
 import zlib from "zlib";
-import { safe_restore } from './safe_restore.js';
 
-export const restore_cmd = async (config) => {
+export const restore_cmd = async (config, adapter) => {
     const start_time = Date.now();
 
     const selected_backup_file = await search({
         message: 'Select backup file to restore from: (Search by name)',
         source: async (input) => {
 
-            const file_path = path.resolve("../backups/" + config.database);
+            const file_path = path.resolve("../backups/" + config.type + "/" + config.database);
             const backup_files = await fs.readdirSync(file_path);
 
             if (!input) {
@@ -46,5 +44,5 @@ export const restore_cmd = async (config) => {
         // if file is not compressed
         config.file = selected_backup_file;
     }
-    await safe_restore(config);
+    await adapter.restore(config);
 }

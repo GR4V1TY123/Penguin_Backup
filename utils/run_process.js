@@ -5,7 +5,9 @@ export const run_process = (command, args, options = {}) => {
     return new Promise((resolve, reject) => {
         const process = spawn(command, args, options);
         process.stderr.on('data', (data) => {
-            console.error(`stderr: ${data}`);
+            if(data.includes('error') || data.includes('Error') || data.includes('ERROR') || data.includes('failed') || data.includes('Failed') || data.includes('FAILED')) {
+                console.error(`stderr: ${data}`);
+            }
         });
         process.on('error', (err) => {
             reject(err);

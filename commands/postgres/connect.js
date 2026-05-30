@@ -1,7 +1,7 @@
 import ora from 'ora';
 import pg from 'pg'
 import colors from 'colors';
-import { logger } from '../utils/logger.js';
+import { logger } from '../../utils/logger.js';
 import { MongoClient } from 'mongodb';
 
 const { Pool, Client } = pg

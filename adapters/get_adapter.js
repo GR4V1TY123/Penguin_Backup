@@ -1,7 +1,9 @@
-export const get_adapter = (db_type) => {
+export const get_adapter = async (db_type) => {
     switch (db_type) {
         case 'postgres':
-            return import('./postgres.js');
+            return (await import('./postgres.js')).default;
+        case 'mongodb':
+            return (await import('./mongodb.js')).default;
         default:
             throw new Error('Unsupported database type: ' + db_type);
     }
