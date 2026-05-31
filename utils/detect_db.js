@@ -36,7 +36,7 @@ const check_postgres_connection = async (config) => {
 
 const check_mongo_connection = async (config) => {
     let error_message;
-    const mongo_client = new MongoClient(`mongodb://localhost:27017`);
+    const mongo_client = new MongoClient(`mongodb://${config.host}:${config.port}`);
     try {
         await mongo_client.connect();
         await mongo_client.db().command({ ping: 1 });
@@ -59,6 +59,7 @@ const check_mongo_connection = async (config) => {
 
 export const detect_db_type = async (config) => {
     const validate_spinner = ora('Checking Database...').start();
+    let error_message;
     for (let i = 0; i < 3; i++) {
         const postgres_check = await check_postgres_connection(config);
         if (postgres_check.success) {
@@ -70,11 +71,12 @@ export const detect_db_type = async (config) => {
             validate_spinner.succeed('MongoDB Connection Verified!');
             return "mongodb";
         }
+        error_message = `${postgres_check.error} | ${mongo_check.error}`;
     }
     logger.error('Unable to connect to the database with the provided credentials', {
         operation: "check_db",
         status: "failure",
-        error: postgres_check.error + " | " + mongo_check.error,
+        error: error_message,
         suggestion: "Please check your connection details and try again."
     });
     validate_spinner.fail('No database connection could be established!');

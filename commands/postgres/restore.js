@@ -107,9 +107,9 @@ const compare_databases = async (config, temp_db_name) => {
     }
 };
 
-const delete_old_db = (config) => {
+const delete_db = (config) => {
     try {
-        return run_process('dropdb', [
+        return await run_process('dropdb', [
             config.database,
             "-U", config.username,
             "-h", config.host,
@@ -121,9 +121,8 @@ const delete_old_db = (config) => {
                 PGPASSWORD: config.password
             }
         });
-
     } catch (err) {
-        logger.error('Failed to delete old database', {
+        logger.error(`Failed to delete ${config.database} database`, {
             status: 'failure',
             operation: 'delete_old_db',
             error: err.message,
@@ -132,32 +131,9 @@ const delete_old_db = (config) => {
     }
 };
 
-const delete_temp_db = (config, temp_db_name) => {
-    try {
-        return run_process('dropdb', [
-            temp_db_name,
-            "-U", config.username,
-            "-h", config.host,
-            "-p", config.port
-        ], {
-            env: {
-                ...process.env,
-                PGPASSWORD: config.password
-            }
-        });
-    } catch (err) {
-        logger.error('Failed to delete temp database', {
-            status: 'failure',
-            operation: 'delete_temp_db',
-            error: err.message,
-        });
-        throw err;
-    }
-};
-
 const create_temp_db = (config, temp_db_name) => {
     try {
-        return run_process('createdb', [
+        return await run_process('createdb', [
             temp_db_name,
             "-U", config.username,
             "-h", config.host,
@@ -227,7 +203,7 @@ const rename_temp_db = (config, temp_db_name) => {
     }
 };
 
-export const safe_restore = async (config) => {
+export const restore_cmd = async (config) => {
     const restore_spinner = ora('Restoring Backup to ' + config.database + ' via Safe Restore...').start();
 
     const file_type = path.extname(config.file);
@@ -250,10 +226,11 @@ export const safe_restore = async (config) => {
     });
 
     if (option === 'proceed') {
-        await delete_old_db(config);
+        await delete_db(config);
         await rename_temp_db(config, temp_db_name);
     } else {
-        await delete_temp_db(config, temp_db_name);
+        config.database = temp_db_name;
+        await delete_db(config);
         restore_spinner.info('Rolled back to old database successfully');
     }
 }

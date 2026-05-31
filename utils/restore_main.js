@@ -4,8 +4,9 @@ import inquirer from 'inquirer';
 import path from "node:path";
 import fs from "fs";
 import zlib from "zlib";
+import { logger } from './logger.js';
 
-export const restore_cmd = async (config, adapter) => {
+export const restore_main = async (config, adapter) => {
     const start_time = Date.now();
 
     const selected_backup_file = await search({
@@ -14,6 +15,15 @@ export const restore_cmd = async (config, adapter) => {
 
             const file_path = path.resolve("../backups/" + config.type + "/" + config.database);
             const backup_files = await fs.readdirSync(file_path);
+
+            if(backup_files.length === 0) {
+                logger.error(`No backup files found for database ${config.database}`, {
+                    operation: "restore - select backup file",
+                    status: "failure",
+                    suggestion: "Please create a backup before attempting to restore."
+                });
+                process.exit(1);
+            }
 
             if (!input) {
                 return backup_files.toSorted().reverse().map(file => ({

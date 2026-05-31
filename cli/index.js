@@ -3,6 +3,7 @@ import colors from 'colors';
 import config from "../config.json" with { type: "json" };
 import { detect_db_type } from "../utils/detect_db.js";
 import { get_adapter } from "../adapters/get_adapter.js";
+import { restore_main } from './../utils/restore_main.js';
 
 colors.setTheme({
     silly: 'rainbow',
@@ -75,7 +76,7 @@ program.command("restore")
         }
         inputs.type = db_type;
         const adapter = await get_adapter(db_type);
-        adapter.restore(inputs);
+        await restore_main(inputs, adapter);
     });
 
 program.command("listdb")
